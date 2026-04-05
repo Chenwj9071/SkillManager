@@ -910,7 +910,6 @@ export function App() {
               >
                 <strong>{skill.name}</strong>
                 <div>{skill.description || TEXT.noDescription}</div>
-                <div className="path-scroll subtle">{skill.rootPath}</div>
                 <div className="path-scroll subtle">{skill.skillPath}</div>
               </button>
             </div>

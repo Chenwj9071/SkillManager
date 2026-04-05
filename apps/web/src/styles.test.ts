@@ -17,4 +17,11 @@ describe('toast styles', () => {
     expect(css).toContain('color: #24312b;');
     expect(css).toContain('background: #eef1ef;');
   });
+
+  it('gives selected skill rows a dedicated highlighted background', () => {
+    const css = readFileSync(stylesPath, 'utf8');
+
+    expect(css).toContain('.skill-row.active,');
+    expect(css).toContain('background: linear-gradient(180deg, #f4fbf8 0%, #e7f4ee 100%);');
+  });
 });

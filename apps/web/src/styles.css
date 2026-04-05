@@ -181,6 +181,7 @@ button {
 .directory-card.active,
 .directory-row.active {
   border-color: #0f8d5e;
+  background: linear-gradient(180deg, #f4fbf8 0%, #e7f4ee 100%);
   box-shadow: 0 8px 30px rgba(15, 141, 94, 0.12);
 }
 

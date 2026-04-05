@@ -53,6 +53,8 @@ Output:
 release/skills-manager-local-<platform>-<arch>/
 ```
 
+`release/` is a local build output directory and is ignored by Git.
+
 Windows install flow:
 
 1. Run `release/skills-manager-local-win32-x64/install.cmd`

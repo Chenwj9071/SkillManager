@@ -15,7 +15,7 @@
     "package:windows": "corepack pnpm package:local && node scripts/build-windows-installer.mjs",
     "test": "corepack pnpm exec vitest run",
     "test:watch": "corepack pnpm exec vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "node scripts/run-e2e.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.55.0",

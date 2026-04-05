@@ -332,6 +332,25 @@ describe('App', () => {
     });
   });
 
+  it('shows only the skill path in the list and keeps the selected skill highlighted', async () => {
+    mockApiFetch();
+    const { container } = renderApp();
+
+    await screen.findByText('Skills Manager');
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.skill-row')).toHaveLength(2);
+    });
+
+    const firstSkillRow = container.querySelector('.skill-row') as HTMLElement | null;
+    expect(firstSkillRow).not.toBeNull();
+    expect(firstSkillRow).toHaveClass('active');
+
+    const pathRows = firstSkillRow?.querySelectorAll('.skill-detail-button .path-scroll.subtle');
+    expect(pathRows).toHaveLength(1);
+    expect(pathRows?.[0]?.textContent).toBe('/repo/.claude/skills/reviewer');
+  });
+
   it('submits structured claude metadata and availability updates', async () => {
     const fetchMock = mockApiFetch();
     const user = userEvent.setup();
