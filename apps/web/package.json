@@ -1,0 +1,17 @@
+{
+  "name": "@skill-manager/web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1 --port 4173",
+    "build": "tsc -p tsconfig.json && vite build",
+    "preview": "vite preview --host 127.0.0.1 --port 4173"
+  },
+  "dependencies": {
+    "@skill-manager/shared": "workspace:*",
+    "@tanstack/react-query": "^5.87.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  }
+}
