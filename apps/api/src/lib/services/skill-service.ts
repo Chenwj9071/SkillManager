@@ -174,6 +174,11 @@ export function buildSkillService() {
 
     listLogs() {
       return logRepository.listAll();
+    },
+
+    async clearLogs() {
+      logRepository.clearAll();
+      return { ok: true };
     }
   };
 }

@@ -126,6 +126,7 @@ export function buildApp(options: BuildAppOptions = {}) {
     return skillService.createRootLink(input);
   });
   app.get('/api/logs', async () => ({ logs: skillService.listLogs() }));
+  app.delete('/api/logs', async () => skillService.clearLogs());
   app.post('/api/dialogs/select-directory', async () => ({
     path: await directoryPicker.pickDirectory()
   }));

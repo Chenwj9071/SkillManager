@@ -19,6 +19,7 @@ export function createLogRepository(db: DatabaseSync) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
   const listStmt = db.prepare('SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 100');
+  const clearStmt = db.prepare('DELETE FROM activity_logs');
 
   return {
     log(action: string, targetType: string, targetPath: string, detail: Record<string, unknown>) {
@@ -34,6 +35,10 @@ export function createLogRepository(db: DatabaseSync) {
 
     listAll(): ActivityLog[] {
       return (listStmt.all() as Array<Record<string, unknown>>).map(mapRow);
+    },
+
+    clearAll() {
+      clearStmt.run();
     }
   };
 }

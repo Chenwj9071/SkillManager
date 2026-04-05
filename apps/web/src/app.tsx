@@ -9,6 +9,7 @@ import type {
 } from '@skill-manager/shared';
 import {
   addDirectory,
+  clearLogs,
   createRootLink,
   createSkillLink,
   deleteDirectory,
@@ -103,6 +104,11 @@ const TEXT = {
   linkedSkill: '\u94fe\u63a5\u6280\u80fd',
   viewSkillDetail: '\u9009\u62e9\u4e00\u4e2a\u6280\u80fd\u67e5\u770b\u8be6\u60c5\u3002',
   recentActions: '\u6700\u8fd1\u64cd\u4f5c',
+  clearRecentActions: '\u6e05\u7a7a\u6700\u8fd1\u64cd\u4f5c',
+  messageLogsCleared: '\u6700\u8fd1\u64cd\u4f5c\u5df2\u6e05\u7a7a',
+  messageSkillPathCopied: '\u6280\u80fd\u8def\u5f84\u5df2\u590d\u5236',
+  messageClipboardUnavailable: '\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u526a\u8d34\u677f\u590d\u5236',
+  copiedPathHint: '\u53cc\u51fb\u590d\u5236\u8be5\u8def\u5f84',
   claudeUserInvocable: 'user-invocable',
   claudeDisableModelInvocation: 'disable-model-invocation',
   claudeAllowedTools: 'allowed-tools',
@@ -594,6 +600,16 @@ export function App() {
     onError: setErrorMessage
   });
 
+  const clearLogsMutation = useMutation({
+    mutationFn: clearLogs,
+    onSuccess: async () => {
+      setMessage('');
+      showToast(TEXT.messageLogsCleared);
+      await queryClient.invalidateQueries({ queryKey: ['logs'] });
+    },
+    onError: setErrorMessage
+  });
+
   function toggleSkillSelection(skillId: string) {
     setSelectedSkillIds((current) =>
       current.includes(skillId) ? current.filter((id) => id !== skillId) : [...current, skillId]
@@ -613,6 +629,20 @@ export function App() {
 
   function clearSelectedSkills() {
     setSelectedSkillIds([]);
+  }
+
+  async function copySelectedSkillPath(path: string) {
+    if (!navigator.clipboard?.writeText) {
+      showToast(TEXT.messageClipboardUnavailable, 'error');
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(path);
+      showToast(TEXT.messageSkillPathCopied);
+    } catch (error) {
+      setErrorMessage(error);
+    }
   }
 
   return (
@@ -923,7 +953,15 @@ export function App() {
           <>
             <div className="hero">
               <h2>{selectedSkill.name}</h2>
-              <p className="path-scroll">{selectedSkill.skillPath}</p>
+              <button
+                id="selected-skill-path"
+                type="button"
+                className="path-copy-button path-scroll"
+                title={TEXT.copiedPathHint}
+                onDoubleClick={() => copySelectedSkillPath(selectedSkill.skillPath)}
+              >
+                {selectedSkill.skillPath}
+              </button>
             </div>
 
             <div className="button-row">
@@ -1227,7 +1265,18 @@ export function App() {
           <div className="empty-state">{TEXT.viewSkillDetail}</div>
         )}
 
-        <h3 className="section-title">{TEXT.recentActions}</h3>
+        <div className="section-header">
+          <h3 className="section-title">{TEXT.recentActions}</h3>
+          <button
+            id="clear-logs-button"
+            type="button"
+            className="button secondary"
+            disabled={(logsQuery.data?.logs?.length ?? 0) === 0}
+            onClick={() => clearLogsMutation.mutate()}
+          >
+            {TEXT.clearRecentActions}
+          </button>
+        </div>
         <div className="list">
           {(logsQuery.data?.logs ?? []).map((log) => (
             <div className="log-row" key={log.id}>

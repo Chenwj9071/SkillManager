@@ -121,6 +121,12 @@ export function fetchLogs() {
   return request<{ logs: ActivityLog[] }>('/api/logs');
 }
 
+export function clearLogs() {
+  return request<{ ok: true }>('/api/logs', {
+    method: 'DELETE'
+  });
+}
+
 export function pickDirectory() {
   return request<{ path: string | null }>('/api/dialogs/select-directory', {
     method: 'POST'

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -127,7 +127,22 @@ function mockApiFetch() {
     }
 
     if (url.endsWith('/api/logs') && method === 'GET') {
-      return buildJsonResponse({ logs: [] });
+      return buildJsonResponse({
+        logs: [
+          {
+            id: 'log-1',
+            action: 'skill.metadata.updated',
+            targetType: 'skill',
+            targetPath: '/repo/.claude/skills/reviewer',
+            detail: {},
+            createdAt: '2026-04-05T08:00:00.000Z'
+          }
+        ]
+      });
+    }
+
+    if (url.endsWith('/api/logs') && method === 'DELETE') {
+      return buildJsonResponse({ ok: true });
     }
 
     if (url.endsWith('/api/directories') && method === 'POST') {
@@ -441,6 +456,50 @@ describe('App', () => {
     await waitFor(() => {
       expect(targetInput!.value).toBe('/picked/parent/skills');
     });
+  });
+
+  it('copies the selected skill path on double click', async () => {
+    mockApiFetch();
+    Object.defineProperty(globalThis.navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: vi.fn(async () => undefined) }
+    });
+
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await screen.findByText('Skills Manager');
+
+    await waitFor(() => {
+      expect(container.querySelector('#selected-skill-path')).not.toBeNull();
+    });
+
+    const pathNode = container.querySelector('#selected-skill-path') as HTMLElement | null;
+    fireEvent.doubleClick(pathNode!);
+
+    expect(await screen.findByText('技能路径已复制')).toBeInTheDocument();
+  });
+
+  it('clears recent actions with one click', async () => {
+    const fetchMock = mockApiFetch();
+    const user = userEvent.setup();
+    renderApp();
+
+    await screen.findByText('Skills Manager');
+    expect(await screen.findByText('skill.metadata.updated')).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: '清空最近操作' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:3001/api/logs',
+        expect.objectContaining({
+          method: 'DELETE'
+        })
+      );
+    });
+
+    expect(await screen.findByText('最近操作已清空')).toBeInTheDocument();
   });
 
   it('submits the root link form', async () => {

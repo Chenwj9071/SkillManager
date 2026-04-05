@@ -60,6 +60,7 @@ describe('api', () => {
           createSkillLink: async () => ({ skills: [] }),
           createRootLink: async () => ({ skills: [] }),
           listLogs: () => [],
+          clearLogs: async () => ({ ok: true }),
           updateAvailabilityBatch: async (skillIds, mode) => {
             capturedPayload = { skillIds, mode };
             return { skills: [] };
@@ -82,6 +83,39 @@ describe('api', () => {
       skillIds: ['skill-1', 'skill-2'],
       mode: 'manual_only'
     });
+  });
+
+  it('clears activity logs through the API', async () => {
+    let cleared = false;
+    const app = buildApp({
+      services: {
+        skillService: {
+          rescan: async () => ({ skills: [] }),
+          listSkills: () => [],
+          getSkill: async () => null,
+          updateAvailability: async () => ({ skills: [] }),
+          updateMetadata: async () => ({ skills: [] }),
+          deleteSkill: async () => ({ skills: [] }),
+          createSkillLink: async () => ({ skills: [] }),
+          createRootLink: async () => ({ skills: [] }),
+          listLogs: () => [],
+          clearLogs: async () => {
+            cleared = true;
+            return { ok: true };
+          },
+          updateAvailabilityBatch: async () => ({ skills: [] })
+        }
+      }
+    });
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: '/api/logs'
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({ ok: true });
+    expect(cleared).toBe(true);
   });
 
   it('returns the picked directory path through the dialog API', async () => {

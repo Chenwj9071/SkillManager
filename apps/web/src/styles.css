@@ -370,6 +370,17 @@ button {
   font-size: 1rem;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.section-header .section-title {
+  margin-bottom: 0;
+}
+
 .empty-state {
   padding: 20px;
   border-radius: 16px;
@@ -434,6 +445,20 @@ pre {
   border: none;
   padding: 0;
   color: inherit;
+}
+
+.path-copy-button {
+  appearance: none;
+  border: none;
+  padding: 0;
+  background: transparent;
+  text-align: left;
+  color: #53655c;
+  cursor: copy;
+}
+
+.path-copy-button:hover {
+  color: #163b2a;
 }
 
 .metadata-grid,
