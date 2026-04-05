@@ -15,4 +15,24 @@ describe('workspace start script', () => {
     expect(script).not.toContain('vite.cmd');
     expect(script).not.toContain('4173');
   });
+
+  it('checks service readiness through the health endpoint instead of Get-NetTCPConnection polling', () => {
+    const scriptPath = resolve(process.cwd(), 'scripts', 'start-app.ps1');
+    const script = readFileSync(scriptPath, 'utf8');
+
+    expect(script).toContain('/api/health');
+    expect(script).toContain('Invoke-WebRequest');
+    expect(script).not.toContain('Get-NetTCPConnection');
+  });
+});
+
+describe('packaged start script', () => {
+  it('uses the health endpoint instead of Get-NetTCPConnection polling', () => {
+    const scriptPath = resolve(process.cwd(), 'scripts', 'local-app', 'start-app.ps1');
+    const script = readFileSync(scriptPath, 'utf8');
+
+    expect(script).toContain('/api/health');
+    expect(script).toContain('Invoke-WebRequest');
+    expect(script).not.toContain('Get-NetTCPConnection');
+  });
 });

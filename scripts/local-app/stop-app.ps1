@@ -6,19 +6,26 @@ function Write-Info {
   Write-Host "[Skills Manager] $Message"
 }
 
-$port = 3001
-$connections = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$appRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '..'))
+$runtimeDir = Join-Path $appRoot 'data\runtime'
+$pidFile = Join-Path $runtimeDir 'pids.json'
 
-if ($connections.Count -eq 0) {
-  Write-Info "No process is listening on port $port."
+if (-not (Test-Path $pidFile)) {
+  Write-Info 'No tracked background service was found.'
   exit 0
 }
 
-$connections | ForEach-Object {
-  $processId = $_.OwningProcess
-  $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
-  if ($process) {
-    Stop-Process -Id $processId -Force
-    Write-Info ("Stopped process {0} ({1}) on port {2}" -f $processId, $process.ProcessName, $port)
-  }
+$pidRecord = Get-Content $pidFile -Raw | ConvertFrom-Json
+$serverPid = [int]$pidRecord.serverPid
+$process = Get-Process -Id $serverPid -ErrorAction SilentlyContinue
+
+if (-not $process) {
+  Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+  Write-Info "No running process was found for pid $serverPid."
+  exit 0
 }
+
+Stop-Process -Id $serverPid -Force
+Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+Write-Info ("Stopped process {0} ({1})" -f $serverPid, $process.ProcessName)

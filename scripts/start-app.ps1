@@ -14,6 +14,7 @@ $serverErrLog = Join-Path $runtimeDir 'server.err.log'
 $pidFile = Join-Path $runtimeDir 'pids.json'
 $serverHost = '127.0.0.1'
 $serverPort = 3001
+$healthUrl = "http://{0}:{1}/api/health" -f $serverHost, $serverPort
 $serverEntry = Join-Path $repoRoot 'apps\api\dist\server.cjs'
 $webDistDir = Join-Path $repoRoot 'apps\web\dist'
 
@@ -38,17 +39,41 @@ function Assert-CommandExists {
   return $command.Source
 }
 
-function Wait-ForPort {
+function Test-HealthEndpoint {
   param(
-    [int]$Port,
-    [int]$TimeoutSeconds = 30
+    [string]$Url
+  )
+
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2
+    if ($response.StatusCode -eq 200 -and $response.Content -match '"status"\s*:\s*"ok"') {
+      return $true
+    }
+  }
+  catch {
+    return $false
+  }
+  return $false
+}
+
+function Wait-ForHealthEndpoint {
+  param(
+    [string]$Url,
+    [int]$TimeoutSeconds = 30,
+    [int]$ProcessId = 0
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
-    $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    if ($connection) {
+    if (Test-HealthEndpoint -Url $Url) {
       return $true
+    }
+
+    if ($ProcessId -gt 0) {
+      $runningProcess = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+      if (-not $runningProcess) {
+        return $false
+      }
     }
 
     Start-Sleep -Milliseconds 500
@@ -60,9 +85,8 @@ function Wait-ForPort {
 $nodeBinary = Assert-CommandExists -Name 'node' -Hint 'Node.js was not found. Install Node.js 24+ first.'
 [void](Assert-CommandExists -Name 'corepack' -Hint 'corepack was not found. Install a Node.js version that includes corepack.')
 
-$existing = @(Get-NetTCPConnection -LocalPort $serverPort -State Listen -ErrorAction SilentlyContinue)
-if ($existing.Count -gt 0) {
-  Write-Info "Port $serverPort is already in use."
+if (Test-HealthEndpoint -Url $healthUrl) {
+  Write-Info "Skills Manager is already running at $healthUrl."
   if (-not $NoBrowser) {
     Start-Process ("http://{0}:{1}" -f $serverHost, $serverPort)
   }
@@ -88,6 +112,9 @@ if (-not (Test-Path $serverEntry)) {
 if (-not (Test-Path $webDistDir)) {
   throw "Production web assets were not found after build.`nMissing path: $webDistDir"
 }
+
+@('', '') | Set-Content -Path $serverOutLog -Encoding UTF8
+@('', '') | Set-Content -Path $serverErrLog -Encoding UTF8
 
 $previousValues = @{
   host = $env:SKILL_MANAGER_HOST
@@ -121,8 +148,8 @@ finally {
   port = $serverPort
 } | ConvertTo-Json | Set-Content -Path $pidFile -Encoding UTF8
 
-if (-not (Wait-ForPort -Port $serverPort -TimeoutSeconds 30)) {
-  Write-Info 'Startup failed. The server port did not become ready in time.'
+if (-not (Wait-ForHealthEndpoint -Url $healthUrl -TimeoutSeconds 30 -ProcessId $process.Id)) {
+  Write-Info 'Startup failed. The health endpoint did not become ready in time.'
   if (Test-Path $serverErrLog) {
     Get-Content $serverErrLog -Tail 40
   }

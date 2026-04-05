@@ -21,18 +21,44 @@ function Assert-PathExists {
   }
 }
 
-function Wait-ForPort {
+function Test-HealthEndpoint {
   param(
-    [int]$Port,
-    [int]$TimeoutSeconds = 30
+    [string]$Url
+  )
+
+  try {
+    $response = Invoke-WebRequest -UseBasicParsing -Uri $Url -TimeoutSec 2
+    if ($response.StatusCode -eq 200 -and $response.Content -match '"status"\s*:\s*"ok"') {
+      return $true
+    }
+  }
+  catch {
+    return $false
+  }
+
+  return $false
+}
+
+function Wait-ForHealthEndpoint {
+  param(
+    [string]$Url,
+    [int]$TimeoutSeconds = 30,
+    [int]$ProcessId = 0
   )
 
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
-    $connection = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
-    if ($connection) {
+    if (Test-HealthEndpoint -Url $Url) {
       return $true
     }
+
+    if ($ProcessId -gt 0) {
+      $runningProcess = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+      if (-not $runningProcess) {
+        return $false
+      }
+    }
+
     Start-Sleep -Milliseconds 500
   }
 
@@ -51,6 +77,7 @@ $serverEntry = Join-Path $appRoot 'app\api\server.cjs'
 $webDistDir = Join-Path $appRoot 'app\web'
 $serverHost = '127.0.0.1'
 $port = 3001
+$healthUrl = "http://{0}:{1}/api/health" -f $serverHost, $port
 
 if (-not (Test-Path $nodeBinary)) {
   $nodeBinary = Join-Path $appRoot 'runtime\node'
@@ -62,14 +89,16 @@ Assert-PathExists -Path $webDistDir -Hint 'Production web assets were not found.
 
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
-  $existing = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue)
-if ($existing.Count -gt 0) {
-  Write-Info "Port $port is already in use."
+if (Test-HealthEndpoint -Url $healthUrl) {
+  Write-Info "Skills Manager is already running at $healthUrl."
   if (-not $NoBrowser) {
     Start-Process ("http://{0}:{1}" -f $serverHost, $port)
   }
   exit 0
 }
+
+@('', '') | Set-Content -Path $serverOutLog -Encoding UTF8
+@('', '') | Set-Content -Path $serverErrLog -Encoding UTF8
 
 $previousValues = @{
   host = $env:SKILL_MANAGER_HOST
@@ -106,8 +135,8 @@ finally {
   port = $port
 } | ConvertTo-Json | Set-Content -Path $pidFile -Encoding UTF8
 
-if (-not (Wait-ForPort -Port $port -TimeoutSeconds 30)) {
-  Write-Info 'Startup failed. The server port did not become ready in time.'
+if (-not (Wait-ForHealthEndpoint -Url $healthUrl -TimeoutSeconds 30 -ProcessId $process.Id)) {
+  Write-Info 'Startup failed. The health endpoint did not become ready in time.'
   if (Test-Path $serverErrLog) {
     Get-Content $serverErrLog -Tail 40
   }
