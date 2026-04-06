@@ -1,0 +1,52 @@
+name: Manual Windows Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-windows-installer:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Run tests
+        run: corepack pnpm test
+
+      - name: Build application
+        run: corepack pnpm build
+
+      - name: Build Windows installer
+        run: corepack pnpm package:windows
+
+      - name: Upload Windows installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-manager-setup-win32-x64
+          path: release/skills-manager-setup-win32-x64/SkillsManagerSetup.exe
+          if-no-files-found: error
+
+      - name: Upload local package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skills-manager-local-win32-x64
+          path: release/skills-manager-local-win32-x64
+          if-no-files-found: error

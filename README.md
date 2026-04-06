@@ -97,6 +97,21 @@ $env:INNO_SETUP_COMPILER='C:\Path\To\ISCC.exe'
 corepack pnpm package:windows
 ```
 
+## GitHub Manual Build
+
+The repository includes a GitHub Actions workflow for manual Windows builds:
+
+1. Open the repository on GitHub
+2. Go to `Actions`
+3. Choose `Manual Windows Build`
+4. Click `Run workflow`
+5. Wait for the run to finish, then download the generated artifacts
+
+Artifacts uploaded by the workflow:
+
+- `skills-manager-setup-win32-x64`
+- `skills-manager-local-win32-x64`
+
 ## Verify
 
 ```bash
