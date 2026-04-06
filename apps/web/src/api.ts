@@ -12,6 +12,26 @@ import type {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:3001';
 
+type ActivityLogUndoState = ActivityLog['undoState'];
+type ActivityLogLike = Omit<ActivityLog, 'undoState'> & {
+  undoState?: Partial<ActivityLogUndoState> | null;
+};
+
+function normalizeUndoState(undoState: ActivityLogLike['undoState']): ActivityLogUndoState {
+  return {
+    supported: undoState?.supported === true,
+    available: undoState?.available === true,
+    reason: typeof undoState?.reason === 'string' ? undoState.reason : null
+  };
+}
+
+function normalizeActivityLog(log: ActivityLogLike): ActivityLog {
+  return {
+    ...log,
+    undoState: normalizeUndoState(log.undoState)
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers =
     init?.body === undefined
@@ -47,6 +67,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>;
+}
+
+async function requestText(path: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    ...init
+  });
+
+  if (!response.ok) {
+    const rawText = await response.text();
+    throw new Error(rawText || `Request failed with status ${response.status}`);
+  }
+
+  return response.text();
 }
 
 export function fetchDirectories() {
@@ -118,12 +151,32 @@ export function createRootLink(input: CreateRootLinkInput) {
 }
 
 export function fetchLogs() {
-  return request<{ logs: ActivityLog[] }>('/api/logs');
+  return request<{ logs: ActivityLogLike[] }>('/api/logs').then((response) => ({
+    logs: response.logs.map((log) => normalizeActivityLog(log))
+  }));
 }
 
 export function clearLogs() {
   return request<{ ok: true }>('/api/logs', {
     method: 'DELETE'
+  });
+}
+
+export function fetchLogDetail(id: string) {
+  return request<{ log: ActivityLogLike }>(`/api/logs/${id}`).then((response) => ({
+    log: normalizeActivityLog(response.log)
+  }));
+}
+
+export function undoLog(id: string) {
+  return request<{ ok: true }>(`/api/logs/${id}/undo`, {
+    method: 'POST'
+  });
+}
+
+export function exportLogsCsv() {
+  return requestText('/api/logs/export', {
+    method: 'GET'
   });
 }
 

@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addDirectory, deleteDirectory, pickDirectory, rescanSkills } from './api';
+import {
+  addDirectory,
+  deleteDirectory,
+  fetchLogDetail,
+  fetchLogs,
+  pickDirectory,
+  rescanSkills
+} from './api';
 
 function mockFetch() {
   const fetchMock = vi.fn(async () => ({
@@ -83,5 +90,51 @@ describe('api request helper', () => {
         scope: 'custom'
       })
     ).rejects.toThrow('目标路径已存在，无法创建链接');
+  });
+
+  it('normalizes legacy log payloads that do not include undoState', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => ({
+      ok: true,
+      status: 200,
+      json: async () =>
+        String(input).endsWith('/api/logs/legacy-log')
+          ? {
+              log: {
+                id: 'legacy-log',
+                action: 'directory.added',
+                targetType: 'directory',
+                targetPath: '/custom/skills',
+                detail: {},
+                createdAt: '2026-04-06T07:29:26.738Z'
+              }
+            }
+          : {
+              logs: [
+                {
+                  id: 'legacy-log',
+                  action: 'directory.added',
+                  targetType: 'directory',
+                  targetPath: '/custom/skills',
+                  detail: {},
+                  createdAt: '2026-04-06T07:29:26.738Z'
+                }
+              ]
+            },
+      text: async () => '{}'
+    })) as unknown as typeof fetch;
+
+    const logsResponse = await fetchLogs();
+    const logDetailResponse = await fetchLogDetail('legacy-log');
+
+    expect(logsResponse.logs[0].undoState).toEqual({
+      supported: false,
+      available: false,
+      reason: null
+    });
+    expect(logDetailResponse.log.undoState).toEqual({
+      supported: false,
+      available: false,
+      reason: null
+    });
   });
 });

@@ -1,5 +1,12 @@
 import { z } from 'zod';
-import { availabilityModeSchema, directoryRecordSchema, normalizedSkillSchema, scopeSchema, toolTypeSchema } from './domain';
+import {
+  activityLogSchema,
+  availabilityModeSchema,
+  directoryRecordSchema,
+  normalizedSkillSchema,
+  scopeSchema,
+  toolTypeSchema
+} from './domain';
 
 export const addDirectoryInputSchema = z.object({
   path: z.string().min(1),
@@ -66,4 +73,12 @@ export const skillsResponseSchema = z.object({
 
 export const selectDirectoryResponseSchema = z.object({
   path: z.string().nullable()
+});
+
+export const logsResponseSchema = z.object({
+  logs: z.array(activityLogSchema)
+});
+
+export const logResponseSchema = z.object({
+  log: activityLogSchema
 });

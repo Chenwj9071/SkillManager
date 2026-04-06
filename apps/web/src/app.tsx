@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type {
+  ActivityLog,
   AvailabilityMode,
   DirectoryRecord,
   NormalizedSkill,
@@ -14,11 +15,14 @@ import {
   createSkillLink,
   deleteDirectory,
   deleteSkill,
+  exportLogsCsv,
   fetchDirectories,
+  fetchLogDetail,
   fetchLogs,
   fetchSkills,
   pickDirectory,
   rescanSkills,
+  undoLog,
   updateAvailability,
   updateAvailabilityBatch,
   updateMetadata
@@ -109,6 +113,16 @@ const TEXT = {
   messageSkillPathCopied: '\u6280\u80fd\u8def\u5f84\u5df2\u590d\u5236',
   messageClipboardUnavailable: '\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u526a\u8d34\u677f\u590d\u5236',
   copiedPathHint: '\u53cc\u51fb\u590d\u5236\u8be5\u8def\u5f84',
+  exportCsv: '\u5bfc\u51fa CSV',
+  messageLogsExported: '\u65e5\u5fd7\u5df2\u5bfc\u51fa',
+  messageOperationUndone: '\u64cd\u4f5c\u5df2\u64a4\u9500',
+  operationDetail: '\u64cd\u4f5c\u8be6\u60c5',
+  closeDialog: '\u5173\u95ed',
+  undoThisOperation: '\u64a4\u9500\u6b64\u64cd\u4f5c',
+  undoAvailable: '\u53ef\u64a4\u9500',
+  undoUnavailable: '\u4e0d\u53ef\u64a4\u9500',
+  undoReason: '\u4e0d\u53ef\u64a4\u9500\u539f\u56e0',
+  rawDetail: '\u65e5\u5fd7\u8be6\u60c5',
   claudeUserInvocable: 'user-invocable',
   claudeDisableModelInvocation: 'disable-model-invocation',
   claudeAllowedTools: 'allowed-tools',
@@ -122,6 +136,7 @@ const TEXT = {
 
 const EMPTY_DIRECTORIES: DirectoryRecord[] = [];
 const EMPTY_SKILLS: NormalizedSkill[] = [];
+const EMPTY_LOGS: ActivityLog[] = [];
 
 interface MetadataFormState {
   name: string;
@@ -177,6 +192,15 @@ const directoryToolOptions: SelectOption[] = [
 ];
 
 const toolTypeOrder: ToolType[] = ['claude', 'codex', 'cursor', 'generic'];
+
+function getUndoState(log: Pick<ActivityLog, 'undoState'> | Omit<ActivityLog, 'undoState'>) {
+  const undoState = (log as ActivityLog).undoState;
+  return {
+    supported: undoState?.supported === true,
+    available: undoState?.available === true,
+    reason: typeof undoState?.reason === 'string' ? undoState.reason : null
+  };
+}
 
 function AvailabilityBadge({ mode }: { mode: AvailabilityMode }) {
   return <span className={`pill ${mode}`}>{availabilityLabels[mode]}</span>;
@@ -291,6 +315,8 @@ export function App() {
   const [selectedSkillIds, setSelectedSkillIds] = useState<string[]>([]);
   const [message, setMessage] = useState('');
   const [toasts, setToasts] = useState<ToastState[]>([]);
+  const toastTimeoutIdsRef = useRef<number[]>([]);
+  const [selectedLogId, setSelectedLogId] = useState('');
   const [directoryForm, setDirectoryForm] = useState<{
     path: string;
     toolType: ToolType;
@@ -325,9 +351,15 @@ export function App() {
   const directoriesQuery = useQuery({ queryKey: ['directories'], queryFn: fetchDirectories });
   const skillsQuery = useQuery({ queryKey: ['skills'], queryFn: fetchSkills });
   const logsQuery = useQuery({ queryKey: ['logs'], queryFn: fetchLogs });
+  const logDetailQuery = useQuery({
+    queryKey: ['logs', selectedLogId],
+    queryFn: () => fetchLogDetail(selectedLogId),
+    enabled: selectedLogId.length > 0
+  });
 
   const directories = directoriesQuery.data?.directories ?? EMPTY_DIRECTORIES;
   const skills = skillsQuery.data?.skills ?? EMPTY_SKILLS;
+  const logs = logsQuery.data?.logs ?? EMPTY_LOGS;
 
   const directoriesWithCounts = useMemo(() => {
     const counts = new Map<string, number>();
@@ -451,12 +483,23 @@ export function App() {
     });
   }, [skills]);
 
+  useEffect(() => {
+    return () => {
+      for (const timeoutId of toastTimeoutIdsRef.current) {
+        window.clearTimeout(timeoutId);
+      }
+      toastTimeoutIdsRef.current = [];
+    };
+  }, []);
+
   function showToast(text: string, tone: ToastState['tone'] = 'success') {
     const id = Date.now() + Math.floor(Math.random() * 1000);
     setToasts((current) => [...current, { id, tone, text }]);
-    window.setTimeout(() => {
+    const timeoutId = window.setTimeout(() => {
       setToasts((current) => current.filter((toast) => toast.id !== id));
+      toastTimeoutIdsRef.current = toastTimeoutIdsRef.current.filter((item) => item !== timeoutId);
     }, 3200);
+    toastTimeoutIdsRef.current.push(timeoutId);
   }
 
   function setErrorMessage(error: unknown) {
@@ -610,6 +653,33 @@ export function App() {
     onError: setErrorMessage
   });
 
+  const undoLogMutation = useMutation({
+    mutationFn: undoLog,
+    onSuccess: async () => {
+      setSelectedLogId('');
+      setMessage('');
+      showToast(TEXT.messageOperationUndone);
+      await invalidateAll();
+    },
+    onError: setErrorMessage
+  });
+
+  const exportLogsMutation = useMutation({
+    mutationFn: exportLogsCsv,
+    onSuccess: (csvText) => {
+      const blob = new Blob([csvText], { type: 'text/csv;charset=utf-8' });
+      const objectUrl = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = `skills-manager-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+      anchor.click();
+      URL.revokeObjectURL(objectUrl);
+      setMessage('');
+      showToast(TEXT.messageLogsExported);
+    },
+    onError: setErrorMessage
+  });
+
   function toggleSkillSelection(skillId: string) {
     setSelectedSkillIds((current) =>
       current.includes(skillId) ? current.filter((id) => id !== skillId) : [...current, skillId]
@@ -643,6 +713,15 @@ export function App() {
     } catch (error) {
       setErrorMessage(error);
     }
+  }
+
+  function renderUndoBadge(log: ActivityLog) {
+    const undoState = getUndoState(log);
+    if (!undoState.supported || !undoState.available) {
+      return null;
+    }
+
+    return <span className="pill automatic">{TEXT.undoAvailable}</span>;
   }
 
   return (
@@ -1267,26 +1346,107 @@ export function App() {
 
         <div className="section-header">
           <h3 className="section-title">{TEXT.recentActions}</h3>
-          <button
-            id="clear-logs-button"
-            type="button"
-            className="button secondary"
-            disabled={(logsQuery.data?.logs?.length ?? 0) === 0}
-            onClick={() => clearLogsMutation.mutate()}
-          >
-            {TEXT.clearRecentActions}
-          </button>
+          <div className="button-row">
+            <button
+              id="export-logs-button"
+              type="button"
+              className="button secondary"
+              disabled={logs.length === 0}
+              onClick={() => exportLogsMutation.mutate()}
+            >
+              {TEXT.exportCsv}
+            </button>
+            <button
+              id="clear-logs-button"
+              type="button"
+              className="button secondary"
+              disabled={logs.length === 0}
+              onClick={() => clearLogsMutation.mutate()}
+            >
+              {TEXT.clearRecentActions}
+            </button>
+          </div>
         </div>
         <div className="list">
-          {(logsQuery.data?.logs ?? []).map((log) => (
-            <div className="log-row" key={log.id}>
-              <strong>{log.action}</strong>
+          {logs.map((log) => (
+            <button
+              type="button"
+              className="log-row log-row-button"
+              key={log.id}
+              onClick={() => setSelectedLogId(log.id)}
+            >
+              <div className="button-row">
+                <strong>{log.action}</strong>
+                {renderUndoBadge(log)}
+              </div>
               <div className="path-scroll">{log.targetPath}</div>
               <div className="subtle">{new Date(log.createdAt).toLocaleString()}</div>
-            </div>
+            </button>
           ))}
         </div>
       </section>
+      {selectedLogId ? (
+        <div className="modal-backdrop" role="presentation" onClick={() => setSelectedLogId('')}>
+          <div
+            className="modal-card"
+            role="dialog"
+            aria-modal="true"
+            aria-label={TEXT.operationDetail}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="section-header">
+              <h3 className="section-title">{TEXT.operationDetail}</h3>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => setSelectedLogId('')}
+              >
+                {TEXT.closeDialog}
+              </button>
+            </div>
+            {logDetailQuery.data?.log ? (
+              (() => {
+                const undoState = getUndoState(logDetailQuery.data.log);
+
+                return (
+                  <div className="stack">
+                <div className="card">
+                  <strong>{logDetailQuery.data.log.action}</strong>
+                  <div className="path-scroll">{logDetailQuery.data.log.targetPath}</div>
+                  <div className="subtle">
+                    {new Date(logDetailQuery.data.log.createdAt).toLocaleString()}
+                  </div>
+                </div>
+                {undoState.supported && undoState.available ? (
+                  <div className="button-row">
+                    {renderUndoBadge(logDetailQuery.data.log)}
+                  </div>
+                ) : null}
+                <div className="card">
+                  <strong>{TEXT.rawDetail}</strong>
+                  <pre>{JSON.stringify(logDetailQuery.data.log.detail, null, 2)}</pre>
+                </div>
+                {undoState.supported && undoState.available ? (
+                  <div className="button-row">
+                    <button
+                      id="undo-log-button"
+                      type="button"
+                      className="button"
+                      onClick={() => undoLogMutation.mutate(logDetailQuery.data!.log.id)}
+                    >
+                      {TEXT.undoThisOperation}
+                    </button>
+                  </div>
+                ) : null}
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="empty-state">{TEXT.operationDetail}</div>
+            )}
+          </div>
+        </div>
+      ) : null}
       </div>
     </>
   );

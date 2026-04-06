@@ -61,6 +61,9 @@ describe('api', () => {
           createRootLink: async () => ({ skills: [] }),
           listLogs: () => [],
           clearLogs: async () => ({ ok: true }),
+          getLog: async () => ({ log: null }),
+          undoLog: async () => ({ ok: true }),
+          exportLogsCsv: async () => 'createdAt,action',
           updateAvailabilityBatch: async (skillIds, mode) => {
             capturedPayload = { skillIds, mode };
             return { skills: [] };
@@ -103,6 +106,9 @@ describe('api', () => {
             cleared = true;
             return { ok: true };
           },
+          getLog: async () => ({ log: null }),
+          undoLog: async () => ({ ok: true }),
+          exportLogsCsv: async () => 'createdAt,action',
           updateAvailabilityBatch: async () => ({ skills: [] })
         }
       }
@@ -116,6 +122,97 @@ describe('api', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ ok: true });
     expect(cleared).toBe(true);
+  });
+
+  it('returns log details through the API', async () => {
+    const app = buildApp({
+      services: {
+        skillService: {
+          rescan: async () => ({ skills: [] }),
+          listSkills: () => [],
+          getSkill: async () => null,
+          updateAvailability: async () => ({ skills: [] }),
+          updateMetadata: async () => ({ skills: [] }),
+          deleteSkill: async () => ({ skills: [] }),
+          createSkillLink: async () => ({ skills: [] }),
+          createRootLink: async () => ({ skills: [] }),
+          listLogs: () => [],
+          clearLogs: async () => ({ ok: true }),
+          getLog: async () => ({
+            log: {
+              id: 'log-1',
+              action: 'skill.availability.updated',
+              targetType: 'skill',
+              targetPath: '/repo/.claude/skills/reviewer',
+              detail: {},
+              createdAt: '2026-04-06T00:00:00.000Z',
+              undoState: {
+                supported: true,
+                available: true,
+                reason: null
+              }
+            }
+          }),
+          undoLog: async () => ({ ok: true }),
+          exportLogsCsv: async () => 'createdAt,action',
+          updateAvailabilityBatch: async () => ({ skills: [] })
+        } as never
+      }
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/logs/log-1'
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual({
+      log: {
+        id: 'log-1',
+        action: 'skill.availability.updated',
+        targetType: 'skill',
+        targetPath: '/repo/.claude/skills/reviewer',
+        detail: {},
+        createdAt: '2026-04-06T00:00:00.000Z',
+        undoState: {
+          supported: true,
+          available: true,
+          reason: null
+        }
+      }
+    });
+  });
+
+  it('returns csv export through the API', async () => {
+    const app = buildApp({
+      services: {
+        skillService: {
+          rescan: async () => ({ skills: [] }),
+          listSkills: () => [],
+          getSkill: async () => null,
+          updateAvailability: async () => ({ skills: [] }),
+          updateMetadata: async () => ({ skills: [] }),
+          deleteSkill: async () => ({ skills: [] }),
+          createSkillLink: async () => ({ skills: [] }),
+          createRootLink: async () => ({ skills: [] }),
+          listLogs: () => [],
+          clearLogs: async () => ({ ok: true }),
+          getLog: async () => ({ log: null }),
+          undoLog: async () => ({ ok: true }),
+          exportLogsCsv: async () => 'createdAt,action\r\n2026-04-06,skill.availability.updated',
+          updateAvailabilityBatch: async () => ({ skills: [] })
+        } as never
+      }
+    });
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/logs/export'
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.headers['content-type']).toContain('text/csv');
+    expect(response.body).toContain('createdAt,action');
   });
 
   it('returns the picked directory path through the dialog API', async () => {

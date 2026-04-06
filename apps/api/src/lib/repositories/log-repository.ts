@@ -19,7 +19,9 @@ export function createLogRepository(db: DatabaseSync) {
     VALUES (?, ?, ?, ?, ?, ?)
   `);
   const listStmt = db.prepare('SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT 100');
+  const listAllStmt = db.prepare('SELECT * FROM activity_logs ORDER BY created_at DESC');
   const clearStmt = db.prepare('DELETE FROM activity_logs');
+  const findStmt = db.prepare('SELECT * FROM activity_logs WHERE id = ?');
 
   return {
     log(action: string, targetType: string, targetPath: string, detail: Record<string, unknown>) {
@@ -35,6 +37,15 @@ export function createLogRepository(db: DatabaseSync) {
 
     listAll(): ActivityLog[] {
       return (listStmt.all() as Array<Record<string, unknown>>).map(mapRow);
+    },
+
+    listForExport(): ActivityLog[] {
+      return (listAllStmt.all() as Array<Record<string, unknown>>).map(mapRow);
+    },
+
+    findById(id: string): ActivityLog | null {
+      const row = findStmt.get(id) as Record<string, unknown> | undefined;
+      return row ? mapRow(row) : null;
     },
 
     clearAll() {

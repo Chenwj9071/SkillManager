@@ -24,6 +24,15 @@ describe('workspace start script', () => {
     expect(script).toContain('Invoke-WebRequest');
     expect(script).not.toContain('Get-NetTCPConnection');
   });
+
+  it('reconciles stale managed processes by inspecting the port listener and process command line', () => {
+    const scriptPath = resolve(process.cwd(), 'scripts', 'start-app.ps1');
+    const script = readFileSync(scriptPath, 'utf8');
+
+    expect(script).toContain('netstat -ano -p tcp');
+    expect(script).toContain('Get-CimInstance Win32_Process');
+    expect(script).toContain('Stopping stale Skills Manager process');
+  });
 });
 
 describe('packaged start script', () => {
@@ -34,5 +43,14 @@ describe('packaged start script', () => {
     expect(script).toContain('/api/health');
     expect(script).toContain('Invoke-WebRequest');
     expect(script).not.toContain('Get-NetTCPConnection');
+  });
+
+  it('reconciles stale managed processes before starting a new packaged server', () => {
+    const scriptPath = resolve(process.cwd(), 'scripts', 'local-app', 'start-app.ps1');
+    const script = readFileSync(scriptPath, 'utf8');
+
+    expect(script).toContain('netstat -ano -p tcp');
+    expect(script).toContain('Get-CimInstance Win32_Process');
+    expect(script).toContain('Stopping stale Skills Manager process');
   });
 });

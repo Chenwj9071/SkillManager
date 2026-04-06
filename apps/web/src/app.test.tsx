@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,21 @@ function buildJsonResponse(body: unknown) {
   } as Response;
 }
 
-function mockApiFetch() {
+function buildTextResponse(body: string, contentType = 'text/plain; charset=utf-8') {
+  return {
+    ok: true,
+    status: 200,
+    json: async () => {
+      throw new Error('Not json');
+    },
+    text: async () => body,
+    headers: {
+      get: (name: string) => (name.toLowerCase() === 'content-type' ? contentType : null)
+    }
+  } as unknown as Response;
+}
+
+function mockApiFetch(options: { legacyLogs?: boolean; unavailableUndo?: boolean } = {}) {
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? 'GET';
@@ -135,10 +149,55 @@ function mockApiFetch() {
             targetType: 'skill',
             targetPath: '/repo/.claude/skills/reviewer',
             detail: {},
-            createdAt: '2026-04-05T08:00:00.000Z'
+            createdAt: '2026-04-05T08:00:00.000Z',
+            ...(options.legacyLogs
+              ? {}
+              : {
+                  undoState: {
+                    supported: true,
+                    available: options.unavailableUndo ? false : true,
+                    reason: options.unavailableUndo ? '目标已被后续修改' : null
+                  }
+                })
           }
         ]
       });
+    }
+
+    if (url.endsWith('/api/logs/log-1') && method === 'GET') {
+      return buildJsonResponse({
+        log: {
+          id: 'log-1',
+          action: 'skill.metadata.updated',
+          targetType: 'skill',
+          targetPath: '/repo/.claude/skills/reviewer',
+          detail: {
+            undo: {
+              supported: true,
+              kind: 'skill.metadata',
+              targetPath: '/repo/.claude/skills/reviewer'
+            }
+          },
+          createdAt: '2026-04-05T08:00:00.000Z',
+          ...(options.legacyLogs
+            ? {}
+            : {
+                undoState: {
+                  supported: true,
+                  available: options.unavailableUndo ? false : true,
+                  reason: options.unavailableUndo ? '目标已被后续修改' : null
+                }
+              })
+        }
+      });
+    }
+
+    if (url.endsWith('/api/logs/log-1/undo') && method === 'POST') {
+      return buildJsonResponse({ ok: true });
+    }
+
+    if (url.endsWith('/api/logs/export') && method === 'GET') {
+      return buildTextResponse('createdAt,action\r\n2026-04-05T08:00:00.000Z,skill.metadata.updated', 'text/csv; charset=utf-8');
     }
 
     if (url.endsWith('/api/logs') && method === 'DELETE') {
@@ -500,6 +559,103 @@ describe('App', () => {
     });
 
     expect(await screen.findByText('最近操作已清空')).toBeInTheDocument();
+  });
+
+  it('keeps the page interactive when logs come from a legacy backend without undoState', async () => {
+    const user = userEvent.setup();
+    mockApiFetch({ legacyLogs: true });
+    renderApp();
+
+    await screen.findByText('Skills Manager');
+    await user.click(await screen.findByRole('button', { name: /skill\.metadata\.updated/i }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getAllByText('Reviewer').length).toBeGreaterThan(0);
+  });
+
+  it('opens log detail modal and allows undo when the log is still reversible', async () => {
+    const fetchMock = mockApiFetch();
+    const user = userEvent.setup();
+    renderApp();
+
+    await screen.findByText('Skills Manager');
+    await user.click(await screen.findByRole('button', { name: /skill\.metadata\.updated/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: '操作详情' });
+    expect(within(dialog).getByText('可撤销')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: '撤销此操作' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:3001/api/logs/log-1/undo',
+        expect.objectContaining({
+          method: 'POST'
+        })
+      );
+    });
+
+    expect(await screen.findByText('操作已撤销')).toBeInTheDocument();
+  });
+
+  it('hides undo hints and actions for logs that are not currently reversible', async () => {
+    const user = userEvent.setup();
+    mockApiFetch({ unavailableUndo: true });
+    renderApp();
+
+    await screen.findByText('Skills Manager');
+    expect(screen.queryByText('不可撤销')).not.toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: /skill\.metadata\.updated/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText('不可撤销')).toBeNull();
+    expect(within(dialog).queryByText('不可撤销原因')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: '撤销此操作' })).toBeNull();
+  });
+
+  it('exports recent actions as csv', async () => {
+    const fetchMock = mockApiFetch();
+    const user = userEvent.setup();
+    const createObjectURL = vi.fn(() => 'blob:logs');
+    const revokeObjectURL = vi.fn();
+    const click = vi.fn();
+    const originalCreateElement = document.createElement.bind(document);
+
+    vi.stubGlobal('URL', {
+      createObjectURL,
+      revokeObjectURL
+    });
+
+    vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
+      if (tagName.toLowerCase() === 'a') {
+        return {
+          click,
+          href: '',
+          download: ''
+        } as unknown as HTMLAnchorElement;
+      }
+
+      return originalCreateElement(tagName);
+    });
+
+    renderApp();
+
+    await screen.findByText('Skills Manager');
+    await user.click(await screen.findByRole('button', { name: '导出 CSV' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:3001/api/logs/export',
+        expect.objectContaining({
+          method: 'GET'
+        })
+      );
+      expect(createObjectURL).toHaveBeenCalled();
+      expect(click).toHaveBeenCalled();
+    });
+
+    expect(await screen.findByText('日志已导出')).toBeInTheDocument();
   });
 
   it('submits the root link form', async () => {

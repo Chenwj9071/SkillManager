@@ -125,7 +125,26 @@ export function buildApp(options: BuildAppOptions = {}) {
     const input = createRootLinkInputSchema.parse(request.body);
     return skillService.createRootLink(input);
   });
-  app.get('/api/logs', async () => ({ logs: skillService.listLogs() }));
+  app.get('/api/logs/export', async (_request, reply) => {
+    const csv = await skillService.exportLogsCsv();
+    reply.type('text/csv; charset=utf-8');
+    return reply.send(csv);
+  });
+  app.get('/api/logs', async () => ({ logs: await skillService.listLogs() }));
+  app.get('/api/logs/:id', async (request, reply) => {
+    const params = request.params as { id: string };
+    const result = await skillService.getLog(params.id);
+    if (!result.log) {
+      reply.code(404);
+      return { message: 'Log not found' };
+    }
+
+    return result;
+  });
+  app.post('/api/logs/:id/undo', async (request) => {
+    const params = request.params as { id: string };
+    return skillService.undoLog(params.id);
+  });
   app.delete('/api/logs', async () => skillService.clearLogs());
   app.post('/api/dialogs/select-directory', async () => ({
     path: await directoryPicker.pickDirectory()

@@ -65,6 +65,73 @@ function Wait-ForHealthEndpoint {
   return $false
 }
 
+function Get-PortListenerProcessId {
+  param([int]$Port)
+
+  $pattern = "^\s*TCP\s+\S+:$Port\s+\S+\s+LISTENING\s+(\d+)\s*$"
+  $matches = netstat -ano -p tcp | Select-String ":$Port"
+  foreach ($match in $matches) {
+    if ($match.Line -match $pattern) {
+      return [int]$Matches[1]
+    }
+  }
+
+  return 0
+}
+
+function Get-ProcessCommandLine {
+  param([int]$ProcessId)
+
+  try {
+    $processInfo = Get-CimInstance Win32_Process -Filter "ProcessId = $ProcessId" -ErrorAction Stop
+    return [string]$processInfo.CommandLine
+  }
+  catch {
+    return ''
+  }
+}
+
+function Test-IsManagedSkillManagerProcess {
+  param(
+    [int]$ProcessId,
+    [string]$PathMarker
+  )
+
+  if ($ProcessId -le 0) {
+    return $false
+  }
+
+  $commandLine = Get-ProcessCommandLine -ProcessId $ProcessId
+  if (-not $commandLine) {
+    return $false
+  }
+
+  return $commandLine.IndexOf($PathMarker, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+}
+
+function Stop-ManagedProcess {
+  param([int]$ProcessId)
+
+  if ($ProcessId -le 0) {
+    return
+  }
+
+  $process = Get-Process -Id $ProcessId -ErrorAction SilentlyContinue
+  if ($process) {
+    Stop-Process -Id $ProcessId -Force
+  }
+}
+
+function Set-PidRecord {
+  param([int]$ProcessId)
+
+  @{
+    serverPid = $ProcessId
+    startedAt = (Get-Date).ToString('s')
+    port = $port
+  } | ConvertTo-Json | Set-Content -Path $pidFile -Encoding UTF8
+}
+
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $appRoot = [System.IO.Path]::GetFullPath((Join-Path $scriptDir '..'))
 $dataDir = Join-Path $appRoot 'data'
@@ -89,16 +156,53 @@ Assert-PathExists -Path $webDistDir -Hint 'Production web assets were not found.
 
 New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
 
-if (Test-HealthEndpoint -Url $healthUrl) {
-  Write-Info "Skills Manager is already running at $healthUrl."
-  if (-not $NoBrowser) {
-    Start-Process ("http://{0}:{1}" -f $serverHost, $port)
-  }
-  exit 0
-}
-
 @('', '') | Set-Content -Path $serverOutLog -Encoding UTF8
 @('', '') | Set-Content -Path $serverErrLog -Encoding UTF8
+
+$assetWriteTimeUtc = (
+  @(
+    (Get-Item $serverEntry).LastWriteTimeUtc,
+    (Get-Item (Join-Path $webDistDir 'index.html')).LastWriteTimeUtc
+  ) | Sort-Object -Descending | Select-Object -First 1
+)
+
+$listenerPid = Get-PortListenerProcessId -Port $port
+$trackedPid = 0
+if (Test-Path $pidFile) {
+  try {
+    $trackedPid = [int]((Get-Content $pidFile -Raw | ConvertFrom-Json).serverPid)
+  }
+  catch {
+    $trackedPid = 0
+  }
+}
+
+if ($listenerPid -gt 0) {
+  if (-not (Test-IsManagedSkillManagerProcess -ProcessId $listenerPid -PathMarker $serverEntry)) {
+    throw "Port $port is already in use by another process (PID $listenerPid). Stop that process before starting Skills Manager."
+  }
+
+  $listenerProcess = Get-Process -Id $listenerPid -ErrorAction SilentlyContinue
+  $shouldRestart = $true
+  if ($listenerProcess -and (Test-HealthEndpoint -Url $healthUrl)) {
+    $shouldRestart =
+      ($listenerProcess.StartTime.ToUniversalTime() -lt $assetWriteTimeUtc) -or
+      ($trackedPid -ne $listenerPid)
+  }
+
+  if (-not $shouldRestart) {
+    Set-PidRecord -ProcessId $listenerPid
+    Write-Info "Skills Manager is already running at $healthUrl."
+    if (-not $NoBrowser) {
+      Start-Process ("http://{0}:{1}" -f $serverHost, $port)
+    }
+    exit 0
+  }
+
+  Write-Info "Stopping stale Skills Manager process $listenerPid."
+  Stop-ManagedProcess -ProcessId $listenerPid
+  Remove-Item $pidFile -Force -ErrorAction SilentlyContinue
+}
 
 $previousValues = @{
   host = $env:SKILL_MANAGER_HOST
@@ -129,11 +233,7 @@ finally {
   $env:SKILL_MANAGER_DATA_DIR = $previousValues.dataDir
 }
 
-@{
-  serverPid = $process.Id
-  startedAt = (Get-Date).ToString('s')
-  port = $port
-} | ConvertTo-Json | Set-Content -Path $pidFile -Encoding UTF8
+Set-PidRecord -ProcessId $process.Id
 
 if (-not (Wait-ForHealthEndpoint -Url $healthUrl -TimeoutSeconds 30 -ProcessId $process.Id)) {
   Write-Info 'Startup failed. The health endpoint did not become ready in time.'

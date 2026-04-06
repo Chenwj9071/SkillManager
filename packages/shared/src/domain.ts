@@ -55,6 +55,11 @@ export const activityLogSchema = z.object({
   targetType: z.string(),
   targetPath: z.string(),
   detail: z.record(z.string(), z.unknown()),
-  createdAt: z.string()
+  createdAt: z.string(),
+  undoState: z.object({
+    supported: z.boolean(),
+    available: z.boolean(),
+    reason: z.string().nullable()
+  })
 });
 export type ActivityLog = z.infer<typeof activityLogSchema>;

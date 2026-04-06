@@ -1,5 +1,11 @@
-import { lstat, mkdir, rm, stat, symlink } from 'node:fs/promises';
+import { lstat, mkdir, readlink, realpath, rm, stat, symlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+
+export interface PathState {
+  exists: boolean;
+  isSymlink: boolean;
+  symlinkTarget: string | null;
+}
 
 export async function ensureDirectory(targetPath: string) {
   await mkdir(targetPath, { recursive: true });
@@ -7,6 +13,51 @@ export async function ensureDirectory(targetPath: string) {
 
 export async function removeDirectoryOrLink(targetPath: string) {
   await rm(targetPath, { recursive: true, force: true });
+}
+
+export async function readPathState(targetPath: string): Promise<PathState> {
+  try {
+    const targetStats = await lstat(targetPath);
+    if (!targetStats.isSymbolicLink()) {
+      return {
+        exists: true,
+        isSymlink: false,
+        symlinkTarget: null
+      };
+    }
+
+    try {
+      return {
+        exists: true,
+        isSymlink: true,
+        symlinkTarget: await realpath(targetPath)
+      };
+    } catch {
+      try {
+        return {
+          exists: true,
+          isSymlink: true,
+          symlinkTarget: await readlink(targetPath)
+        };
+      } catch {
+        return {
+          exists: true,
+          isSymlink: true,
+          symlinkTarget: null
+        };
+      }
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error;
+    }
+
+    return {
+      exists: false,
+      isSymlink: false,
+      symlinkTarget: null
+    };
+  }
 }
 
 async function removeBrokenLink(targetPath: string) {
