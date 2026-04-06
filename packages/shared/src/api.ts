@@ -57,11 +57,23 @@ export const createSkillLinkInputSchema = z.object({
 });
 export type CreateSkillLinkInput = z.infer<typeof createSkillLinkInputSchema>;
 
+export const createSkillLinksBatchInputSchema = z.object({
+  skillIds: z.array(z.string().min(1)).min(1),
+  targetRootPath: z.string().min(1)
+});
+export type CreateSkillLinksBatchInput = z.infer<typeof createSkillLinksBatchInputSchema>;
+
 export const createRootLinkInputSchema = z.object({
   sourceRootPath: z.string().min(1),
   targetRootPath: z.string().min(1)
 });
 export type CreateRootLinkInput = z.infer<typeof createRootLinkInputSchema>;
+
+export const openLocalPathInputSchema = z.object({
+  path: z.string().min(1),
+  kind: z.enum(['file', 'directory'])
+});
+export type OpenLocalPathInput = z.infer<typeof openLocalPathInputSchema>;
 
 export const directoriesResponseSchema = z.object({
   directories: z.array(directoryRecordSchema)

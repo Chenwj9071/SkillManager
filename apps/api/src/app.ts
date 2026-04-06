@@ -5,13 +5,16 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import {
   addDirectoryInputSchema,
+  createSkillLinksBatchInputSchema,
   createRootLinkInputSchema,
   createSkillLinkInputSchema,
+  openLocalPathInputSchema,
   updateSkillAvailabilityBatchInputSchema,
   updateSkillAvailabilityInputSchema,
   updateSkillMetadataInputSchema
 } from '@skill-manager/shared';
 import { buildDirectoryPicker, type DirectoryPicker } from './lib/directory-picker';
+import { openLocalPath as defaultOpenLocalPath } from './lib/open-local-path';
 import { buildDirectoryService } from './lib/services/directory-service';
 import { buildSkillService } from './lib/services/skill-service';
 
@@ -59,6 +62,7 @@ interface BuildAppOptions {
     skillService?: SkillService;
   };
   directoryPicker?: DirectoryPicker;
+  openLocalPath?: (path: string, kind: 'file' | 'directory') => Promise<{ ok: true }>;
 }
 
 export function buildApp(options: BuildAppOptions = {}) {
@@ -66,6 +70,7 @@ export function buildApp(options: BuildAppOptions = {}) {
   const directoryService = options.services?.directoryService ?? buildDirectoryService();
   const skillService = options.services?.skillService ?? buildSkillService();
   const directoryPicker = options.directoryPicker ?? buildDirectoryPicker();
+  const openLocalPath = options.openLocalPath ?? defaultOpenLocalPath;
   const webDistDir = options.webDistDir ? resolve(options.webDistDir) : null;
 
   app.register(cors, { origin: true });
@@ -121,9 +126,17 @@ export function buildApp(options: BuildAppOptions = {}) {
     const input = createSkillLinkInputSchema.parse(request.body);
     return skillService.createSkillLink(input);
   });
+  app.post('/api/links/skill/batch', async (request) => {
+    const input = createSkillLinksBatchInputSchema.parse(request.body);
+    return skillService.createSkillLinksBatch(input);
+  });
   app.post('/api/links/root', async (request) => {
     const input = createRootLinkInputSchema.parse(request.body);
     return skillService.createRootLink(input);
+  });
+  app.post('/api/open', async (request) => {
+    const input = openLocalPathInputSchema.parse(request.body);
+    return openLocalPath(input.path, input.kind);
   });
   app.get('/api/logs/export', async (_request, reply) => {
     const csv = await skillService.exportLogsCsv();

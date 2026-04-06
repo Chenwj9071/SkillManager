@@ -5,6 +5,7 @@ import type {
   AvailabilityMode,
   CreateRootLinkInput,
   CreateSkillLinkInput,
+  CreateSkillLinksBatchInput,
   NormalizedSkill,
   ToolType,
   UpdateSkillMetadataInput
@@ -505,6 +506,92 @@ export function buildSkillService() {
         }
       });
       return this.rescan();
+    },
+
+    async createSkillLinksBatch(input: CreateSkillLinksBatchInput) {
+      const created: Array<{ skillId: string; targetPath: string; sourcePath: string; status: 'created' }> = [];
+      const skipped: Array<{ skillId: string; targetPath: string; sourcePath: string; status: 'already_linked' | 'conflict' }> = [];
+      const failed: Array<{ skillId: string; targetPath: string; sourcePath: string; status: 'missing_skill' }> = [];
+
+      for (const skillId of input.skillIds) {
+        const skill = await this.getSkill(skillId);
+        if (!skill) {
+          failed.push({
+            skillId,
+            targetPath: join(input.targetRootPath, skillId),
+            sourcePath: '',
+            status: 'missing_skill'
+          });
+          continue;
+        }
+
+        const targetPath = join(input.targetRootPath, basename(skill.skillPath));
+        const sourcePath = skill.skillPath;
+        const existingTargetState = await readPathState(targetPath);
+        if (existingTargetState.exists) {
+          if (existingTargetState.isSymlink && existingTargetState.symlinkTarget === sourcePath) {
+            skipped.push({
+              skillId,
+              targetPath,
+              sourcePath,
+              status: 'already_linked'
+            });
+            continue;
+          }
+
+          skipped.push({
+            skillId,
+            targetPath,
+            sourcePath,
+            status: 'conflict'
+          });
+          continue;
+        }
+
+        const before = buildLinkSnapshot(existingTargetState);
+        await createDirectorySymlink(sourcePath, targetPath);
+        const after = buildLinkSnapshot(await readPathState(targetPath));
+        logRepository.log('skill.linked', 'skill', targetPath, {
+          source: sourcePath,
+          batch: true,
+          undo: {
+            supported: true,
+            kind: 'skill.link',
+            targetPath,
+            before,
+            after
+          }
+        });
+        created.push({
+          skillId,
+          targetPath,
+          sourcePath,
+          status: 'created'
+        });
+      }
+
+      logRepository.log('skill.linked.batch', 'system', input.targetRootPath, {
+        requested: input.skillIds.length,
+        created: created.length,
+        skipped: skipped.length,
+        failed: failed.length
+      });
+
+      const rescanned = await this.rescan();
+      return {
+        skills: rescanned.skills,
+        results: {
+          created,
+          skipped,
+          failed,
+          summary: {
+            requested: input.skillIds.length,
+            created: created.length,
+            skipped: skipped.length,
+            failed: failed.length
+          }
+        }
+      };
     },
 
     async listLogs() {

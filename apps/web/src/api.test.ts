@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   addDirectory,
+  createSkillLinksBatch,
   deleteDirectory,
   fetchLogDetail,
   fetchLogs,
+  openLocalPath,
   pickDirectory,
   rescanSkills
 } from './api';
@@ -136,5 +138,45 @@ describe('api request helper', () => {
       available: false,
       reason: null
     });
+  });
+
+  it('sends local open requests with path and kind', async () => {
+    const fetchMock = mockFetch();
+
+    await openLocalPath({
+      path: '/repo/.claude/skills/reviewer/SKILL.md',
+      kind: 'file'
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:3001/api/open',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          path: '/repo/.claude/skills/reviewer/SKILL.md',
+          kind: 'file'
+        })
+      })
+    );
+  });
+
+  it('sends batch skill link creation requests with all selected skills', async () => {
+    const fetchMock = mockFetch();
+
+    await createSkillLinksBatch({
+      skillIds: ['skill-1', 'skill-2'],
+      targetRootPath: '/target/skills'
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://127.0.0.1:3001/api/links/skill/batch',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({
+          skillIds: ['skill-1', 'skill-2'],
+          targetRootPath: '/target/skills'
+        })
+      })
+    );
   });
 });

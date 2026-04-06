@@ -86,7 +86,9 @@ Installer behavior:
 1. Installs to `%LocalAppData%\SkillsManager` by default
 2. Creates Start Menu shortcuts for `Skills Manager` and `Stop Skills Manager`
 3. Creates a desktop shortcut for `Skills Manager`
-4. Launches the app after install if selected in the installer
+4. Offers an optional `Run at login` startup shortcut
+5. Launches the app after install if selected in the installer
+6. Prompts whether to keep local `data/` during uninstall
 
 If `ISCC.exe` is not on the default path:
 

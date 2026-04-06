@@ -9,6 +9,12 @@ const releaseRoot = resolve(repoRoot, 'release', releaseName);
 const packageRoot = resolve(releaseRoot, 'package');
 const nodeBinaryName = basename(process.execPath);
 
+async function readPackageVersion() {
+  const packageJsonPath = resolve(repoRoot, 'package.json');
+  const packageJson = JSON.parse(await import('node:fs/promises').then((fs) => fs.readFile(packageJsonPath, 'utf8')));
+  return String(packageJson.version ?? '0.1.0');
+}
+
 async function copyPath(source, destination) {
   await cp(source, destination, {
     force: true,
@@ -17,6 +23,7 @@ async function copyPath(source, destination) {
 }
 
 async function main() {
+  const version = await readPackageVersion();
   await rm(releaseRoot, { recursive: true, force: true });
   await mkdir(resolve(packageRoot, 'app', 'api'), { recursive: true });
   await mkdir(resolve(packageRoot, 'app', 'web'), { recursive: true });
@@ -33,11 +40,12 @@ async function main() {
   await copyFile(resolve(repoRoot, 'scripts', 'local-app', 'stop-app.ps1'), resolve(packageRoot, 'scripts', 'stop-app.ps1'));
   await copyFile(resolve(repoRoot, 'scripts', 'local-app', 'start-app.cmd'), resolve(packageRoot, 'start-app.cmd'));
   await copyFile(resolve(repoRoot, 'scripts', 'local-app', 'stop-app.cmd'), resolve(packageRoot, 'stop-app.cmd'));
+  await copyFile(resolve(repoRoot, 'installer', 'windows', 'assets', 'skill-manager.ico'), resolve(packageRoot, 'skill-manager.ico'));
   await copyFile(resolve(repoRoot, 'README.md'), resolve(releaseRoot, 'README.md'));
 
   const manifest = {
     name: 'Skills Manager',
-    version: '0.1.0',
+    version,
     platform: process.platform,
     arch: process.arch,
     builtAt: new Date().toISOString(),

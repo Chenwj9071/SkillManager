@@ -4,8 +4,10 @@ import type {
   AvailabilityMode,
   CreateRootLinkInput,
   CreateSkillLinkInput,
+  CreateSkillLinksBatchInput,
   DirectoryRecord,
   NormalizedSkill,
+  OpenLocalPathInput,
   UpdateSkillAvailabilityBatchInput,
   UpdateSkillMetadataInput
 } from '@skill-manager/shared';
@@ -143,8 +145,35 @@ export function createSkillLink(input: CreateSkillLinkInput) {
   });
 }
 
+export function createSkillLinksBatch(input: CreateSkillLinksBatchInput) {
+  return request<{
+    skills: NormalizedSkill[];
+    results: {
+      created: Array<{ skillId: string; targetPath: string; sourcePath: string; status: string }>;
+      skipped: Array<{ skillId: string; targetPath: string; sourcePath: string; status: string }>;
+      failed: Array<{ skillId: string; targetPath: string; sourcePath: string; status: string }>;
+      summary: {
+        requested: number;
+        created: number;
+        skipped: number;
+        failed: number;
+      };
+    };
+  }>('/api/links/skill/batch', {
+    method: 'POST',
+    body: JSON.stringify(input)
+  });
+}
+
 export function createRootLink(input: CreateRootLinkInput) {
   return request<{ skills: NormalizedSkill[] }>('/api/links/root', {
+    method: 'POST',
+    body: JSON.stringify(input)
+  });
+}
+
+export function openLocalPath(input: OpenLocalPathInput) {
+  return request<{ ok: true }>('/api/open', {
     method: 'POST',
     body: JSON.stringify(input)
   });

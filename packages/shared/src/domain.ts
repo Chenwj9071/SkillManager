@@ -63,3 +63,22 @@ export const activityLogSchema = z.object({
   })
 });
 export type ActivityLog = z.infer<typeof activityLogSchema>;
+
+export const batchSkillLinkStatusSchema = z.enum(['created', 'already_linked', 'conflict', 'missing_skill']);
+export type BatchSkillLinkStatus = z.infer<typeof batchSkillLinkStatusSchema>;
+
+export const batchSkillLinkResultItemSchema = z.object({
+  skillId: z.string(),
+  targetPath: z.string(),
+  sourcePath: z.string(),
+  status: batchSkillLinkStatusSchema
+});
+export type BatchSkillLinkResultItem = z.infer<typeof batchSkillLinkResultItemSchema>;
+
+export const batchSkillLinkSummarySchema = z.object({
+  requested: z.number().int().nonnegative(),
+  created: z.number().int().nonnegative(),
+  skipped: z.number().int().nonnegative(),
+  failed: z.number().int().nonnegative()
+});
+export type BatchSkillLinkSummary = z.infer<typeof batchSkillLinkSummarySchema>;

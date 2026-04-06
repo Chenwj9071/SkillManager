@@ -230,4 +230,112 @@ describe('api', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ path: 'D:\\picked\\skills' });
   });
+
+  it('opens a local file through the API', async () => {
+    let opened: { path: string; kind: 'file' | 'directory' } | null = null;
+    const app = buildApp({
+      services: {
+        skillService: {
+          rescan: async () => ({ skills: [] }),
+          listSkills: () => [],
+          getSkill: async () => null,
+          updateAvailability: async () => ({ skills: [] }),
+          updateMetadata: async () => ({ skills: [] }),
+          deleteSkill: async () => ({ skills: [] }),
+          createSkillLink: async () => ({ skills: [] }),
+          createSkillLinksBatch: async () => ({
+            skills: [],
+            results: {
+              created: [],
+              skipped: [],
+              failed: [],
+              summary: { requested: 0, created: 0, skipped: 0, failed: 0 }
+            }
+          }),
+          createRootLink: async () => ({ skills: [] }),
+          listLogs: async () => [],
+          clearLogs: async () => ({ ok: true }),
+          getLog: async () => ({ log: null }),
+          undoLog: async () => ({ ok: true }),
+          exportLogsCsv: async () => 'createdAt,action',
+          updateAvailabilityBatch: async () => ({ skills: [] })
+        } as never
+      },
+      openLocalPath: async (path, kind) => {
+        opened = { path, kind };
+        return { ok: true };
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/open',
+      payload: {
+        path: 'D:\\skills\\reviewer\\SKILL.md',
+        kind: 'file'
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(opened).toEqual({
+      path: 'D:\\skills\\reviewer\\SKILL.md',
+      kind: 'file'
+    });
+  });
+
+  it('creates skill links in batch through the API', async () => {
+    let capturedPayload: { skillIds: string[]; targetRootPath: string } | null = null;
+    const app = buildApp({
+      services: {
+        skillService: {
+          rescan: async () => ({ skills: [] }),
+          listSkills: () => [],
+          getSkill: async () => null,
+          updateAvailability: async () => ({ skills: [] }),
+          updateMetadata: async () => ({ skills: [] }),
+          deleteSkill: async () => ({ skills: [] }),
+          createSkillLink: async () => ({ skills: [] }),
+          createSkillLinksBatch: async (input: { skillIds: string[]; targetRootPath: string }) => {
+            capturedPayload = input;
+            return {
+              skills: [],
+              results: {
+                created: [],
+                skipped: [],
+                failed: [],
+                summary: {
+                  requested: input.skillIds.length,
+                  created: 0,
+                  skipped: 0,
+                  failed: 0
+                }
+              }
+            };
+          },
+          createRootLink: async () => ({ skills: [] }),
+          listLogs: async () => [],
+          clearLogs: async () => ({ ok: true }),
+          getLog: async () => ({ log: null }),
+          undoLog: async () => ({ ok: true }),
+          exportLogsCsv: async () => 'createdAt,action',
+          updateAvailabilityBatch: async () => ({ skills: [] })
+        } as never
+      }
+    });
+
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/links/skill/batch',
+      payload: {
+        skillIds: ['skill-1', 'skill-2'],
+        targetRootPath: 'D:\\target\\skills'
+      }
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(capturedPayload).toEqual({
+      skillIds: ['skill-1', 'skill-2'],
+      targetRootPath: 'D:\\target\\skills'
+    });
+  });
 });

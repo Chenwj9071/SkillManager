@@ -13,6 +13,7 @@ import {
   clearLogs,
   createRootLink,
   createSkillLink,
+  createSkillLinksBatch,
   deleteDirectory,
   deleteSkill,
   exportLogsCsv,
@@ -20,6 +21,7 @@ import {
   fetchLogDetail,
   fetchLogs,
   fetchSkills,
+  openLocalPath,
   pickDirectory,
   rescanSkills,
   undoLog,
@@ -102,6 +104,12 @@ const TEXT = {
   skillReuse: '\u6280\u80fd\u590d\u7528',
   targetSkillsDirectory: '\u76ee\u6807 skills \u76ee\u5f55',
   createSkillLink: '\u521b\u5efa\u5355\u6280\u80fd\u94fe\u63a5',
+  quickActions: '\u5feb\u6377\u64cd\u4f5c',
+  openSkillDirectory: '\u6253\u5f00\u6280\u80fd\u76ee\u5f55',
+  openSkillMarkdown: '\u6253\u5f00 SKILL.md',
+  openSkillCodexConfig: '\u6253\u5f00 Codex \u914d\u7f6e',
+  batchLinkTargetDirectory: '\u6279\u91cf\u94fe\u63a5\u76ee\u6807 skills \u76ee\u5f55',
+  batchCreateSkillLinks: '\u6279\u91cf\u521b\u5efa\u94fe\u63a5',
   rawData: '\u539f\u59cb\u6570\u636e',
   dangerZone: '\u5371\u9669\u64cd\u4f5c',
   deleteSkill: '\u5220\u9664\u6280\u80fd',
@@ -112,6 +120,8 @@ const TEXT = {
   messageLogsCleared: '\u6700\u8fd1\u64cd\u4f5c\u5df2\u6e05\u7a7a',
   messageSkillPathCopied: '\u6280\u80fd\u8def\u5f84\u5df2\u590d\u5236',
   messageClipboardUnavailable: '\u5f53\u524d\u73af\u5883\u4e0d\u652f\u6301\u526a\u8d34\u677f\u590d\u5236',
+  messageBatchSkillLinksCreated: '\u6279\u91cf\u94fe\u63a5\u521b\u5efa\u5df2\u5b8c\u6210',
+  messageLocalPathOpened: '\u5df2\u6253\u5f00\u672c\u5730\u8d44\u6e90',
   copiedPathHint: '\u53cc\u51fb\u590d\u5236\u8be5\u8def\u5f84',
   exportCsv: '\u5bfc\u51fa CSV',
   messageLogsExported: '\u65e5\u5fd7\u5df2\u5bfc\u51fa',
@@ -345,6 +355,7 @@ export function App() {
   const [availabilityForm, setAvailabilityForm] = useState<AvailabilityMode>('automatic');
   const [batchAvailabilityMode, setBatchAvailabilityMode] =
     useState<AvailabilityMode>('manual_only');
+  const [batchLinkTargetRootPath, setBatchLinkTargetRootPath] = useState('');
   const [linkTargetRootPath, setLinkTargetRootPath] = useState('');
   const [isPickingDirectory, setIsPickingDirectory] = useState(false);
 
@@ -632,6 +643,20 @@ export function App() {
     onError: setErrorMessage
   });
 
+  const createSkillLinksBatchMutation = useMutation({
+    mutationFn: createSkillLinksBatch,
+    onSuccess: async (result) => {
+      setMessage('');
+      const { summary } = result.results;
+      showToast(
+        `${TEXT.messageBatchSkillLinksCreated} (${summary.created}/${summary.requested})`
+      );
+      setBatchLinkTargetRootPath('');
+      await invalidateAll();
+    },
+    onError: setErrorMessage
+  });
+
   const createRootLinkMutation = useMutation({
     mutationFn: createRootLink,
     onSuccess: async () => {
@@ -639,6 +664,15 @@ export function App() {
       showToast(TEXT.messageRootLinkCreated);
       setRootLinkForm((current) => ({ ...current, targetRootPath: '' }));
       await invalidateAll();
+    },
+    onError: setErrorMessage
+  });
+
+  const openLocalPathMutation = useMutation({
+    mutationFn: openLocalPath,
+    onSuccess: () => {
+      setMessage('');
+      showToast(TEXT.messageLocalPathOpened);
     },
     onError: setErrorMessage
   });
@@ -985,6 +1019,50 @@ export function App() {
               {TEXT.batchUpdateAvailability}
             </button>
           </div>
+          <div className="batch-actions">
+            <div className="field">
+              <label htmlFor="batch-link-root">{TEXT.batchLinkTargetDirectory}</label>
+              <div className="input-with-action">
+                <input
+                  id="batch-link-root"
+                  value={batchLinkTargetRootPath}
+                  onChange={(event) => setBatchLinkTargetRootPath(event.target.value)}
+                />
+                <button
+                  id="pick-batch-link-target-directory-button"
+                  type="button"
+                  className="button secondary"
+                  disabled={isPickingDirectory}
+                  onClick={() =>
+                    handlePickDirectory((path) =>
+                      setBatchLinkTargetRootPath(
+                        buildPickedLinkPath(
+                          path,
+                          selectedSkill?.rootPath ?? rootLinkForm.sourceRootPath ?? 'skills'
+                        )
+                      )
+                    )
+                  }
+                >
+                  {isPickingDirectory ? TEXT.pickDirectoryBusy : TEXT.pickDirectory}
+                </button>
+              </div>
+            </div>
+            <button
+              id="batch-create-skill-links-button"
+              className="button secondary"
+              type="button"
+              disabled={selectedSkillIds.length === 0 || batchLinkTargetRootPath.length === 0}
+              onClick={() =>
+                createSkillLinksBatchMutation.mutate({
+                  skillIds: selectedSkillIds,
+                  targetRootPath: batchLinkTargetRootPath
+                })
+              }
+            >
+              {TEXT.batchCreateSkillLinks}
+            </button>
+          </div>
           <div className="subtle">
             {TEXT.batchSelectionSummaryPrefix}
             {selectedSkillIds.length}
@@ -1312,6 +1390,53 @@ export function App() {
                 }
               >
                 {TEXT.createSkillLink}
+              </button>
+            </div>
+
+            <h3 className="section-title">{TEXT.quickActions}</h3>
+            <div className="button-row">
+              <button
+                id="open-skill-directory-button"
+                type="button"
+                className="button secondary"
+                onClick={() =>
+                  openLocalPathMutation.mutate({
+                    path: selectedSkill.skillPath,
+                    kind: 'directory'
+                  })
+                }
+              >
+                {TEXT.openSkillDirectory}
+              </button>
+              <button
+                id="open-skill-markdown-button"
+                type="button"
+                className="button secondary"
+                onClick={() =>
+                  openLocalPathMutation.mutate({
+                    path: appendPathSegment(selectedSkill.skillPath, 'SKILL.md'),
+                    kind: 'file'
+                  })
+                }
+              >
+                {TEXT.openSkillMarkdown}
+              </button>
+              <button
+                id="open-skill-codex-config-button"
+                type="button"
+                className="button secondary"
+                disabled={!selectedSkill.codexConfig}
+                onClick={() =>
+                  openLocalPathMutation.mutate({
+                    path: appendPathSegment(
+                      appendPathSegment(selectedSkill.skillPath, 'agents'),
+                      'openai.yaml'
+                    ),
+                    kind: 'file'
+                  })
+                }
+              >
+                {TEXT.openSkillCodexConfig}
               </button>
             </div>
 

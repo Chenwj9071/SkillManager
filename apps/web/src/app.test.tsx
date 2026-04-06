@@ -243,6 +243,34 @@ function mockApiFetch(options: { legacyLogs?: boolean; unavailableUndo?: boolean
       return buildJsonResponse({ skills: [] });
     }
 
+    if (url.endsWith('/api/open') && method === 'POST') {
+      return buildJsonResponse({ ok: true });
+    }
+
+    if (url.endsWith('/api/links/skill/batch') && method === 'POST') {
+      return buildJsonResponse({
+        skills: [],
+        results: {
+          created: [
+            {
+              skillId: 'skill-1',
+              targetPath: '/picked/parent/skills/reviewer',
+              sourcePath: '/repo/.claude/skills/reviewer',
+              status: 'created'
+            }
+          ],
+          skipped: [],
+          failed: [],
+          summary: {
+            requested: 2,
+            created: 1,
+            skipped: 0,
+            failed: 0
+          }
+        }
+      });
+    }
+
     return buildJsonResponse({});
   });
 
@@ -539,6 +567,58 @@ describe('App', () => {
     expect(await screen.findByText('技能路径已复制')).toBeInTheDocument();
   });
 
+  it('opens local skill resources from the detail shortcuts', async () => {
+    const fetchMock = mockApiFetch();
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await screen.findByText('Skills Manager');
+
+    await waitFor(() => {
+      expect(container.querySelector('#open-skill-directory-button')).not.toBeNull();
+      expect(container.querySelector('#open-skill-markdown-button')).not.toBeNull();
+      expect(container.querySelector('#open-skill-codex-config-button')).not.toBeNull();
+    });
+
+    const openDirectoryButton = container.querySelector('#open-skill-directory-button') as HTMLButtonElement | null;
+    const openMarkdownButton = container.querySelector('#open-skill-markdown-button') as HTMLButtonElement | null;
+    const openCodexConfigButton = container.querySelector('#open-skill-codex-config-button') as HTMLButtonElement | null;
+
+    expect(openDirectoryButton).not.toBeNull();
+    expect(openMarkdownButton).not.toBeNull();
+    expect(openCodexConfigButton).not.toBeNull();
+    expect(openCodexConfigButton).toBeDisabled();
+
+    await user.click(openDirectoryButton!);
+    await user.click(openMarkdownButton!);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:3001/api/open',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            path: '/repo/.claude/skills/reviewer',
+            kind: 'directory'
+          })
+        })
+      );
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:3001/api/open',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            path: '/repo/.claude/skills/reviewer/SKILL.md',
+            kind: 'file'
+          })
+        })
+      );
+    });
+
+    const openToasts = await screen.findAllByText('已打开本地资源');
+    expect(openToasts.length).toBeGreaterThanOrEqual(2);
+  });
+
   it('clears recent actions with one click', async () => {
     const fetchMock = mockApiFetch();
     const user = userEvent.setup();
@@ -681,6 +761,47 @@ describe('App', () => {
           body: JSON.stringify({
             sourceRootPath: '/repo/.claude/skills',
             targetRootPath: '/target/root'
+          })
+        })
+      );
+    });
+  });
+
+  it('creates skill links in batch for the selected skills', async () => {
+    const fetchMock = mockApiFetch();
+    const user = userEvent.setup();
+    const { container } = renderApp();
+
+    await screen.findByText('Skills Manager');
+
+    await waitFor(() => {
+      expect(container.querySelectorAll('.skill-row .checkbox-row input[type="checkbox"]')).toHaveLength(2);
+    });
+
+    const checkboxes = container.querySelectorAll('.skill-row .checkbox-row input[type="checkbox"]');
+    await user.click(checkboxes[0] as HTMLInputElement);
+    await user.click(checkboxes[1] as HTMLInputElement);
+
+    const chooseDirectoryButton = container.querySelector(
+      '#pick-batch-link-target-directory-button'
+    ) as HTMLButtonElement | null;
+    expect(chooseDirectoryButton).not.toBeNull();
+    await user.click(chooseDirectoryButton!);
+
+    const batchCreateButton = container.querySelector(
+      '#batch-create-skill-links-button'
+    ) as HTMLButtonElement | null;
+    expect(batchCreateButton).not.toBeNull();
+    await user.click(batchCreateButton!);
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'http://127.0.0.1:3001/api/links/skill/batch',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            skillIds: ['skill-1', 'skill-2'],
+            targetRootPath: '/picked/parent/skills'
           })
         })
       );
